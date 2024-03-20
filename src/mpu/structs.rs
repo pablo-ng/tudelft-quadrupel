@@ -34,15 +34,21 @@ impl Quaternion {
 
 /// The accelerometer values.
 /// They are in the range of [-2G, 2G].
-#[derive(Copy, Clone, Debug)]
+pub type Accel = RawSensor;
+
+/// The gyroscope values.
+/// They are in the range of [-2000 deg/second, 2000 deg/second].
+pub type Gyro = RawSensor;
+
+#[derive(Copy, Clone, Debug, Default)]
 #[allow(missing_docs)]
-pub struct Accel {
+pub struct RawSensor {
     pub x: i16,
     pub y: i16,
     pub z: i16,
 }
 
-impl Accel {
+impl RawSensor {
     pub(crate) fn from_bytes(data: [u8; 6]) -> Self {
         let x = [data[0], data[1]];
         let y = [data[2], data[3]];
@@ -53,27 +59,17 @@ impl Accel {
             z: i16::from_be_bytes(z),
         }
     }
+
+    pub(crate) fn to_bytes(self) -> [u8; 6] {
+        let [b0, b1] = i16::to_be_bytes(self.x);
+        let [b2, b3] = i16::to_be_bytes(self.y);
+        let [b4, b5] = i16::to_be_bytes(self.z);
+        [b0, b1, b2, b3, b4, b5]
+    }
 }
 
-/// The gyroscope values.
-/// They are in the range of [-2000 deg/second, 2000 deg/second].
-#[derive(Copy, Clone, Debug)]
-#[allow(missing_docs)]
-pub struct Gyro {
-    pub x: i16,
-    pub y: i16,
-    pub z: i16,
-}
-
-impl Gyro {
-    pub(crate) fn from_bytes(data: [u8; 6]) -> Self {
-        let x = [data[0], data[1]];
-        let y = [data[2], data[3]];
-        let z = [data[4], data[5]];
-        Self {
-            x: i16::from_be_bytes(x),
-            y: i16::from_be_bytes(y),
-            z: i16::from_be_bytes(z),
-        }
+impl Into<[i16; 3]> for RawSensor {
+    fn into(self) -> [i16; 3] {
+        [self.x, self.y, self.z]
     }
 }

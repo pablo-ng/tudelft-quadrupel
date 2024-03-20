@@ -74,6 +74,10 @@ impl Mpu6050 {
         self.write(i2c, reg as u8, &[value]);
     }
 
+    pub(crate) fn write_registers<'a>(&mut self, i2c: &mut I2c, reg: Register, buf: &'a mut [u8]) {
+        self.write(i2c, reg as u8, buf);
+    }
+
     // ------------------------------------------------------------------------
     // ------------------------------------------------------------------------
 
@@ -202,5 +206,25 @@ impl Mpu6050 {
         let mut data = [0; 6];
         let _ = self.read_registers(i2c, Register::GyroX_H, &mut data);
         Gyro::from_bytes(data)
+    }
+
+    pub fn get_offset_accel(&mut self, i2c: &mut I2c) -> Accel {
+        let mut data = [0; 6];
+        let _ = self.read_registers(i2c, Register::AccelOffsetX_H, &mut data);
+        Accel::from_bytes(data)
+    }
+
+    pub fn get_offset_gyro(&mut self, i2c: &mut I2c) -> Gyro {
+        let mut data = [0; 6];
+        let _ = self.read_registers(i2c, Register::GyroOffsetX_H, &mut data);
+        Gyro::from_bytes(data)
+    }
+
+    pub fn set_offset_accel(&mut self, i2c: &mut I2c, offset: Accel) {
+        self.write_registers(i2c, Register::AccelOffsetX_H, &mut offset.to_bytes())
+    }
+
+    pub fn set_offset_gyro(&mut self, i2c: &mut I2c, offset: Gyro) {
+        self.write_registers(i2c, Register::GyroOffsetX_H, &mut offset.to_bytes())
     }
 }

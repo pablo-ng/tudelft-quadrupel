@@ -90,6 +90,14 @@ pub fn enable_dmp() {
     mpu.dmp_enabled = true;
 }
 
+/// Reset the DMP processor
+pub fn reset_dmp() {
+    // Safety: The TWI and MPU mutexes are not accessed in an interrupt
+    let twi = unsafe { TWI.no_critical_section_lock_mut() };
+    let mpu = unsafe { MPU.no_critical_section_lock_mut() };
+    mpu.mpu.initialize_dmp(twi);
+}
+
 /// This reads the most recent angle from the DMP, if there are any new ones available.
 /// If there is no new angle available, it returns `WouldBlock`.
 /// Do not call this function if the DMP is disabled.
@@ -146,4 +154,26 @@ pub fn read_raw() -> Result<(Accel, Gyro), Error> {
     let gyro = mpu.mpu.gyro(twi);
 
     Ok((accel, gyro))
+}
+
+/// Read Accel and Gyro offsets from the MPU Hardware Offset Registers
+pub fn read_offsets() -> (Accel, Gyro) {
+    // Safety: The TWI and MPU mutexes are not accessed in an interrupt
+    let twi = unsafe { TWI.no_critical_section_lock_mut() };
+    let mpu = unsafe { MPU.no_critical_section_lock_mut() };
+
+    let accel = mpu.mpu.get_offset_accel(twi);
+    let gyro = mpu.mpu.get_offset_gyro(twi);
+
+    (accel, gyro)
+}
+
+/// Write Accel and Gyro offsets to the MPU Hardware Offset Registers
+pub fn write_offsets(offset_accel: Accel, offset_gyro: Gyro) {
+    // Safety: The TWI and MPU mutexes are not accessed in an interrupt
+    let twi = unsafe { TWI.no_critical_section_lock_mut() };
+    let mpu = unsafe { MPU.no_critical_section_lock_mut() };
+
+    mpu.mpu.set_offset_accel(twi, offset_accel);
+    mpu.mpu.set_offset_gyro(twi, offset_gyro);
 }
