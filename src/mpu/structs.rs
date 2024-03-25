@@ -1,3 +1,5 @@
+use core::ops::{AddAssign, DivAssign, MulAssign, SubAssign};
+
 use fixed::{types, FixedI32};
 
 /// A quaternion is a mathematical way of representing angles.
@@ -71,5 +73,69 @@ impl RawSensor {
 impl Into<[i16; 3]> for RawSensor {
     fn into(self) -> [i16; 3] {
         [self.x, self.y, self.z]
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct RawSensorOffset {
+    pub x: i64,
+    pub y: i64,
+    pub z: i64,
+}
+
+impl From<RawSensor> for RawSensorOffset {
+    fn from(value: RawSensor) -> Self {
+        Self {
+            x: value.x.into(),
+            y: value.y.into(),
+            z: value.z.into(),
+        }
+    }
+}
+
+fn wrapping_cast(value: i64) -> i16 {
+    let shift = (if value > 0 { i16::MIN } else { i16::MAX }) as i64;
+    (((value - shift) % 2_i64.pow(16)) + shift) as i16
+}
+
+impl Into<RawSensor> for RawSensorOffset {
+    fn into(self) -> RawSensor {
+        RawSensor {
+            x: wrapping_cast(self.x),
+            y: wrapping_cast(self.y),
+            z: wrapping_cast(self.z),
+        }
+    }
+}
+
+impl AddAssign for RawSensorOffset {
+    fn add_assign(&mut self, rhs: Self) {
+        self.x = self.x.saturating_add(rhs.x);
+        self.y = self.y.saturating_add(rhs.y);
+        self.z = self.z.saturating_add(rhs.z);
+    }
+}
+
+impl SubAssign for RawSensorOffset {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.x = self.x.saturating_sub(rhs.x);
+        self.y = self.y.saturating_sub(rhs.y);
+        self.z = self.z.saturating_sub(rhs.z);
+    }
+}
+
+impl MulAssign<i64> for RawSensorOffset {
+    fn mul_assign(&mut self, rhs: i64) {
+        self.x = self.x.saturating_mul(rhs);
+        self.y = self.y.saturating_mul(rhs);
+        self.z = self.z.saturating_mul(rhs);
+    }
+}
+
+impl DivAssign<i64> for RawSensorOffset {
+    fn div_assign(&mut self, rhs: i64) {
+        self.x = self.x.saturating_div(rhs);
+        self.y = self.y.saturating_div(rhs);
+        self.z = self.z.saturating_div(rhs);
     }
 }

@@ -2,10 +2,14 @@ use crate::mpu::config::DigitalLowPassFilter;
 use crate::mpu::sensor::Mpu6050;
 use crate::mutex::Mutex;
 use crate::once_cell::OnceCell;
+use crate::time::delay_ms_assembly;
 use crate::twi::{TwiWrapper, TWI};
 use error::Error;
 use nb::Error::WouldBlock;
 use structs::{Accel, Gyro, Quaternion};
+
+use self::config::Fifo;
+use self::structs::RawSensorOffset;
 
 #[allow(unused)]
 mod config;
@@ -90,14 +94,6 @@ pub fn enable_dmp() {
     mpu.dmp_enabled = true;
 }
 
-/// Reset the DMP processor
-pub fn reset_dmp() {
-    // Safety: The TWI and MPU mutexes are not accessed in an interrupt
-    let twi = unsafe { TWI.no_critical_section_lock_mut() };
-    let mpu = unsafe { MPU.no_critical_section_lock_mut() };
-    mpu.mpu.initialize_dmp(twi);
-}
-
 /// This reads the most recent angle from the DMP, if there are any new ones available.
 /// If there is no new angle available, it returns `WouldBlock`.
 /// Do not call this function if the DMP is disabled.
@@ -156,24 +152,85 @@ pub fn read_raw() -> Result<(Accel, Gyro), Error> {
     Ok((accel, gyro))
 }
 
-/// Read Accel and Gyro offsets from the MPU Hardware Offset Registers
-pub fn read_offsets() -> (Accel, Gyro) {
+/// Calibrate the MPU and write offsets to Hardware Offset Registers
+pub fn calibrate(duration_ms: u32) {
     // Safety: The TWI and MPU mutexes are not accessed in an interrupt
     let twi = unsafe { TWI.no_critical_section_lock_mut() };
     let mpu = unsafe { MPU.no_critical_section_lock_mut() };
 
-    let accel = mpu.mpu.get_offset_accel(twi);
-    let gyro = mpu.mpu.get_offset_gyro(twi);
+    // reset DMP
+    let dmp_enabled = is_dmp_enabled();
+    if dmp_enabled {
+        disable_dmp();
+    }
 
-    (accel, gyro)
-}
+    for _ in 0..(duration_ms / 50) {
+        // configure FIFO
+        mpu.mpu.enable_fifo(twi);
+        mpu.mpu.set_fifo_enabled(twi, {
+            let mut fifo = Fifo::all_disabled();
+            fifo.xg = true;
+            fifo.yg = true;
+            fifo.zg = true;
+            fifo.accel = true;
+            fifo
+        });
 
-/// Write Accel and Gyro offsets to the MPU Hardware Offset Registers
-pub fn write_offsets(offset_accel: Accel, offset_gyro: Gyro) {
-    // Safety: The TWI and MPU mutexes are not accessed in an interrupt
-    let twi = unsafe { TWI.no_critical_section_lock_mut() };
-    let mpu = unsafe { MPU.no_critical_section_lock_mut() };
+        // fill FIFO
+        mpu.mpu.reset_fifo(twi);
+        delay_ms_assembly(50);
+        mpu.mpu.set_fifo_enabled(twi, Fifo::all_disabled());
 
-    mpu.mpu.set_offset_accel(twi, offset_accel);
-    mpu.mpu.set_offset_gyro(twi, offset_gyro);
+        let mut buf = [0; 12];
+        let fifo_count = mpu.mpu.get_fifo_count(twi);
+        let packet_count = fifo_count / buf.len();
+
+        let mut offset_accel = RawSensorOffset::default();
+        let mut offset_gyro = RawSensorOffset::default();
+
+        for _ in 0..packet_count {
+            let bytes = mpu.mpu.read_fifo(twi, &mut buf);
+
+            let mut accel_bytes = [0; 6];
+            accel_bytes.copy_from_slice(&bytes[0..6]);
+            offset_accel -= Accel::from_bytes(accel_bytes).into();
+
+            let mut gyro_bytes = [0; 6];
+            gyro_bytes.copy_from_slice(&bytes[6..12]);
+            offset_gyro -= Gyro::from_bytes(gyro_bytes).into();
+        }
+
+        // compute averages
+        offset_accel /= packet_count as i64;
+        offset_gyro /= packet_count as i64;
+
+        // scale from +-2G to +-16G and from +-2000dps to +-1000dps sensitivity ranges
+        offset_accel /= 8;
+        offset_gyro *= 2;
+
+        // subtract gravity 1G (in +-16G range) from z axis
+        if offset_accel.z > 0 {
+            offset_accel.z -= 2048;
+        } else {
+            offset_accel.z += 2048;
+        }
+
+        // preserve bit 0 of factory value (for temperature compensation)
+        offset_accel.x &= !1;
+        offset_accel.y &= !1;
+        offset_accel.z &= !1;
+
+        // add existing / factory offsets
+        offset_accel += mpu.mpu.get_offset_accel(twi).into();
+        offset_gyro += mpu.mpu.get_offset_gyro(twi).into();
+
+        // write offsets to registers
+        mpu.mpu.set_offset_accel(twi, offset_accel.into());
+        mpu.mpu.set_offset_gyro(twi, offset_gyro.into());
+    }
+
+    mpu.mpu.disable_fifo(twi);
+    if dmp_enabled {
+        enable_dmp();
+    }
 }
