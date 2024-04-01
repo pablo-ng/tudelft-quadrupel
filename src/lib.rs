@@ -27,8 +27,8 @@ pub extern crate nrf51_hal;
 
 /// reexport of the `cortex_m_rt` entry macro
 pub use cortex_m_rt::entry;
-/// reexport of the `nb` crate.
-pub use nb;
+/// reexport of the `nb::block` macro.
+pub use nb::block;
 
 /// reexport of the `cortex_m` crate
 pub use cortex_m;
