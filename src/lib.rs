@@ -29,6 +29,8 @@ pub extern crate nrf51_hal;
 pub use cortex_m_rt::entry;
 /// reexport of the `nb::block` macro.
 pub use nb::block;
+/// reexport of the `nb::Error::WouldBlock` variant.
+pub use nb::Error::WouldBlock;
 
 /// reexport of the `cortex_m` crate
 pub use cortex_m;
